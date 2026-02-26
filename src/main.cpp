@@ -40,9 +40,12 @@ static constexpr const char* tmpFileBad = "/tmp/srvcfg-mgr.json.bad";
 static std::unordered_map<std::string /* unitName */,
                           bool /* isSocketActivated */>
     managedServices = {{"phosphor-ipmi-net", false}, {"bmcweb", false},
-                       {"phosphor-ipmi-kcs", false}, {"obmc-ikvm", false},
+                       {"phosphor-ipmi-kcs", false}, {"start-ipkvm", false},
                        {"obmc-console", false},      {"dropbear", true},
-                       {"obmc-console-ssh", true},   {"ssifbridge", false}};
+                       {"obmc-console-ssh", true},   {"ssifbridge", false},
+                       {"xyz.openbmc_project.Pmt", false},
+                       {"xyz.openbmc_project.VirtualMedia", false},
+                       {"ipmb", false}};
 
 enum class UnitType
 {
@@ -132,7 +135,9 @@ static inline void handleListUnitsResponse(
             }
 
             std::string instantiatedUnitName =
-                unitName + addInstanceName(instanceName, "@");
+                unitName + addInstanceName(instanceName, "_40");
+            boost::replace_all(instantiatedUnitName, "-", "_2d");
+            boost::replace_all(instantiatedUnitName, ".", "_2e");
             const sdbusplus::message::object_path& objectPath =
                 std::get<static_cast<int>(ListUnitElements::objectPath)>(unit);
             // Group the service & socket units together.. Same services
