@@ -454,14 +454,6 @@ void ServiceConfig::loadStateFile()
             unitMaskedState = stateMap[srvCfgPropMasked];
             updatedFlag |=
                 (1 << static_cast<uint8_t>(UpdatedProp::maskedState));
-            startServiceRestartTimer();
-        }
-        if (stateMap[srvCfgPropEnabled] != unitEnabledState)
-        {
-            lg2::info(
-                "Enabled property for {FILEPATH} not equal. Setting to {SETTING}",
-                "FILEPATH", stateFile, "SETTING", stateMap[srvCfgPropEnabled]);
-            unitEnabledState = stateMap[srvCfgPropEnabled];
             updatedFlag |=
                 (1 << static_cast<uint8_t>(UpdatedProp::enabledState));
             startServiceRestartTimer();
@@ -659,6 +651,8 @@ void ServiceConfig::restartUnitConfig(boost::asio::yield_context yield)
 
 void ServiceConfig::startServiceRestartTimer()
 {
+    // Ensure our persistent files are updated with changes
+    writeStateFile();
     timer->expires_after(std::chrono::seconds(restartTimeout));
     timer->async_wait([this](const boost::system::error_code& ec) {
         if (ec == boost::asio::error::operation_aborted)

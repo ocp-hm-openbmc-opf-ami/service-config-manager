@@ -67,20 +67,6 @@ void createOrUpdateDropinFile(int maxSessions) {
         if (!fileOut.is_open()) {
             std::cerr << "Failed to open drop-in file for writing: " << DROPBEAR_DROPIN_FILE << std::endl;
             exit(EXIT_FAILURE);
-        } else {
-            std::cout << "Drop-in directory created: " << DROPBEAR_DROPIN_DIR << std::endl;
-        }
-    }
-}
-
-void createOrUpdateDropinFile(int maxSessions) {
-    createDropinDirectory();
-    if(access(DROPBEAR_DROPIN_FILE.c_str(),F_OK) != 0)
-    {
-       std::ofstream fileOut(DROPBEAR_DROPIN_FILE);
-        if (!fileOut.is_open()) {
-            std::cerr << "Failed to open drop-in file for writing: " << DROPBEAR_DROPIN_FILE << std::endl;
-            exit(EXIT_FAILURE);
         }
 
         fileOut << "[Socket]\n";
