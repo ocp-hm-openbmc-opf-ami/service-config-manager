@@ -3,6 +3,7 @@ Description=Daemon to control service configuration
 
 [Service]
 Restart=always
+ExecStartPre=/bin/sleep 60
 ExecStart=/usr/bin/phosphor-srvcfg-manager
 SyslogIdentifier=srvcfg-manager
 Type=dbus

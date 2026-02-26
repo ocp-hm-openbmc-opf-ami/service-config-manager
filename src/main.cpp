@@ -597,8 +597,64 @@ void checkAndInit(sdbusplus::asio::object_server& server,
     }
 }
 
+bool isServiceActive(const std::string& serviceName) {
+    std::string cmd = "systemctl is-active --quiet " + serviceName;
+    int result = std::system(cmd.c_str());
+    // systemctl returns 0 if the service is active
+    return result == 0;
+}
+
+bool isServiceEnabled(const std::string& serviceName) {
+    return std::system(("systemctl is-enabled --quiet " + serviceName).c_str()) == 0;
+}
+
+bool checkBmcWebServicesActive() {
+
+    std::vector<std::string> services = {
+        "bmcweb.service",
+        "bmcweb.socket"
+    };
+
+    const int maxRetries = 6;
+    const int sleepSeconds = 30;
+
+    if (!isServiceEnabled("bmcweb.socket")) {
+            return true;
+    }
+
+    for (int i = 0; i < maxRetries; ++i) {
+        bool allActive = true;
+        for (const auto& service : services) {
+            if (!isServiceActive(service)) {
+                allActive = false;
+                break;
+            }
+        }
+
+        if (allActive) {
+            return true;
+        }
+
+        if (i < maxRetries - 1) {
+            std::cout << "Check " << (i + 1) << ": Not all services active, retrying in "
+                      << sleepSeconds << " seconds..." << std::endl;
+            std::this_thread::sleep_for(std::chrono::seconds(sleepSeconds));
+        }
+    }
+
+    std::cout << "bmcweb services are not active after " << maxRetries << " retries. so, exiting service-config-manager" << std::endl;
+    return false;
+}
+
+
 int main()
 {
+
+    if(!checkBmcWebServicesActive())
+    {
+        return 1;
+    }
+
     updateGlobalDataFromFile();
     boost::asio::io_context io;
     auto conn = std::make_shared<sdbusplus::asio::connection>(io);
