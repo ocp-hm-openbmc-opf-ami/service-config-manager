@@ -45,6 +45,7 @@ executable(
     'src/main.cpp',
     'src/srvcfg_manager.cpp',
     'src/utils.cpp',
+    'src/dropbear_srvcfgmgr.cpp',
     implicit_include_directories: false,
     include_directories: ['inc'],
     dependencies: deps,

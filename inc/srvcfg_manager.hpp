@@ -15,9 +15,11 @@
 */
 #pragma once
 #include "utils.hpp"
+#include "dropbear_srvcfgmgr.hpp"
 
 #include <boost/container/flat_map.hpp>
 #include <sdbusplus/timer.hpp>
+extern void updateGlobalDataFromFile();
 
 namespace phosphor
 {
@@ -36,6 +38,8 @@ static constexpr const char* sockAttrPropPort = "Port";
 static constexpr const char* srvCfgPropMasked = "Masked";
 static constexpr const char* srvCfgPropEnabled = "Enabled";
 static constexpr const char* srvCfgPropRunning = "Running";
+static constexpr const char* srvCfgPropTimeOut = "SessionTimeOut";
+static constexpr const char* srvCfgPropMaxSess = "MaxSession";
 
 #ifdef USB_CODE_UPDATE
 static constexpr const char* usbCodeUpdateUnitName = "phosphor_usb_code_update";
@@ -97,6 +101,10 @@ class ServiceConfig
     std::string activeState;
     std::string subState;
     uint16_t portNum;
+    uint16_t maxSess;
+    uint16_t webMaxSess;
+    uint16_t redfishMaxSess;
+    uint64_t timeOut;
     std::vector<std::string> channelList;
     std::string protocol;
     std::string stateValue;

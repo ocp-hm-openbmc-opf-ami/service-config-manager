@@ -24,6 +24,9 @@
 
 #include <cstdio>
 #endif
+
+#include <iostream>
+#include <nlohmann/json.hpp>
 #include <fstream>
 #ifdef PERSIST_SETTINGS
 #include <nlohmann/json.hpp>
@@ -34,6 +37,54 @@ extern std::unique_ptr<boost::asio::steady_timer> timer;
 extern std::map<std::string, std::shared_ptr<phosphor::service::ServiceConfig>>
     srvMgrObjects;
 static bool updateInProgress = false;
+
+const std::string filename = "/etc/srvcfg-manager/srvcfg.json";
+using srvcfgMap = std::map<std::string, std::pair<uint16_t, uint16_t>>;
+using json = nlohmann::json;
+//using namespace std;
+json global_data;
+
+void updateGlobalDataFromFile() {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open file: " << filename << std::endl;
+        return;
+    }
+
+    try {
+        file >> global_data;
+    } catch (json::parse_error& e) {
+        std::cerr << "Parse error while reading JSON file: " << e.what() << std::endl;
+    }
+
+    file.close();
+}
+
+void updateFileFromGlobalData() {
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open file for writing: " << filename << std::endl;
+        return;
+    }
+
+    try {
+        file << std::setw(4) << global_data << std::endl;
+        std::cout << "JSON data successfully written to file: " << filename << std::endl;
+    } catch (json::exception& e) {
+        std::cerr << "Error while writing JSON data to file: " << e.what() << std::endl;
+    }
+
+    file.close();
+}
+
+bool checkServicetoAddTimeOutandMaxSessProp(const std::string& service_name) {
+    for (const auto& service : global_data["services"]) {
+        if (service["name"] == service_name) {
+            return true;
+        }
+    }
+    return false;
+}
 
 namespace phosphor
 {
@@ -653,6 +704,59 @@ void ServiceConfig::startServiceRestartTimer()
 void ServiceConfig::registerProperties()
 {
     srvCfgIface = server.add_interface(objPath, serviceConfigIntfName);
+    bool TimoutPropStatus = false;
+    bool MaxSessPropStatus = false;
+    bool EnabledPropStatus = false;
+    bool EnabledStatus = false;
+
+    if(checkServicetoAddTimeOutandMaxSessProp(instantiatedUnitName))
+    {
+        for (auto& service : global_data["services"])
+        {
+            if (service["name"] == instantiatedUnitName) {
+                TimoutPropStatus =  service.contains("timeout");
+                EnabledPropStatus = service.contains("Enabled");
+
+                if(instantiatedUnitName == "bmcweb")
+                {
+                    MaxSessPropStatus = service.contains("web_max_session_limit") && service.contains("redfish_max_session_limit") ;
+                }
+                else
+                {
+                    MaxSessPropStatus = service.contains("max_session_limit") ;
+                }
+
+
+                if (MaxSessPropStatus) {
+                    if(instantiatedUnitName == "bmcweb")
+                    {
+                        webMaxSess = service["web_max_session_limit"];
+                        redfishMaxSess =  service["redfish_max_session_limit"];
+                    }
+                    else
+                    {
+                        maxSess = service["max_session_limit"];
+                    }
+                }
+                if (TimoutPropStatus){
+                    uint64_t timeout_tmp = service["timeout"];
+                    if(timeout_tmp < 30 || timeout_tmp > 86400)
+                    {
+                        timeOut = 600;
+                    }
+                    else{
+                        timeOut = timeout_tmp;
+                    }
+
+                }
+                if (EnabledPropStatus){
+                    EnabledStatus  = service["Enabled"];
+                }
+
+                break;
+            }
+        }
+    }
 
     if (!socketObjectPath.empty())
     {
@@ -679,6 +783,75 @@ void ServiceConfig::registerProperties()
                 return 1;
             });
     }
+    if(TimoutPropStatus)
+    {
+        srvCfgIface->register_property(
+            srvCfgPropTimeOut, timeOut,
+            [this](const uint64_t& req, uint64_t& res) {
+                if (!internalSet)
+                {
+                    if(req < 30 || req > 86400){
+                        std::cout << "inavlid data :"<< req << std::endl;
+                        return 0;
+                    }
+
+                    if (req == res)
+                    {
+                        return 1;
+                    }
+                    if (updateInProgress)
+                    {
+                        return 0;
+                    }
+                    for (auto& service : global_data["services"])
+                    {
+                        if (service["name"] == instantiatedUnitName) {
+                            service["timeout"] = timeOut =  req;
+                            break;
+                        }
+                    }
+                    if( instantiatedUnitName == "dropbear")
+                    {
+                        if(!updateDropbearTimeout(timeOut)) {
+                            std::cout << "Fail to update the Timeout value" << std::endl;
+                            return 0;
+                        }
+                    }
+                    updateFileFromGlobalData();
+                    startServiceRestartTimer();
+                }
+                res = req;
+                return 1;
+            });
+    }
+
+
+    if(MaxSessPropStatus)
+    {
+        if(instantiatedUnitName == "bmcweb")
+        {
+            srvCfgIface->register_property(
+                    "WebMaxSession", webMaxSess,
+                    sdbusplus::asio::PropertyPermission::readOnly);
+
+            srvCfgIface->register_property(
+                    "RedfishMaxSession", redfishMaxSess,
+                    sdbusplus::asio::PropertyPermission::readOnly);
+        }
+        else
+        {
+            if(instantiatedUnitName == "dropbear")
+            {
+                createOrUpdateDropinFile(maxSess);
+            }
+
+            srvCfgIface->register_property(
+                    srvCfgPropMaxSess, maxSess,
+                    sdbusplus::asio::PropertyPermission::readOnly);
+        }
+
+    }
+
 
     srvCfgIface->register_property(
         srvCfgPropMasked, unitMaskedState, [this](const bool& req, bool& res) {
@@ -723,6 +896,17 @@ void ServiceConfig::registerProperties()
                 srvCfgIface->set_property(srvCfgPropEnabled, unitEnabledState);
                 srvCfgIface->set_property(srvCfgPropRunning, unitRunningState);
                 internalSet = false;
+                if(checkServicetoAddTimeOutandMaxSessProp(instantiatedUnitName))
+                {
+                    for (auto& service : global_data["services"])
+                    {
+                        if (service["name"] == instantiatedUnitName) {
+                            service["Enabled"] = unitEnabledState;
+                            break;
+                        }
+                    }
+                    updateFileFromGlobalData();
+                }
                 startServiceRestartTimer();
             }
             res = req;
@@ -770,7 +954,21 @@ void ServiceConfig::registerProperties()
                     lg2::error("Invalid value specified");
                     return -EINVAL;
                 }
-                unitEnabledState = req;
+                if(checkServicetoAddTimeOutandMaxSessProp(instantiatedUnitName))
+                {
+                    for (auto& service : global_data["services"])
+                    {
+                        if (service["name"] == instantiatedUnitName) {
+                            service["Enabled"] = unitEnabledState = req;
+                            break;
+                        }
+                    }
+                    updateFileFromGlobalData();
+                }
+                else{
+                    unitEnabledState = req;
+                }
+
                 updatedFlag |=
                     (1 << static_cast<uint8_t>(UpdatedProp::enabledState));
                 startServiceRestartTimer();
@@ -830,6 +1028,44 @@ void ServiceConfig::registerProperties()
         });
 
     srvCfgIface->initialize();
+    if(checkServicetoAddTimeOutandMaxSessProp(instantiatedUnitName))
+    {
+
+        internalSet = true;
+        if(TimoutPropStatus)
+        {
+            if( instantiatedUnitName == "dropbear")
+            {
+                if(!updateDropbearTimeout(timeOut)) {
+                    std::cout << "Fail to update the Timeout for " << instantiatedUnitName << std::endl;
+                }
+            }
+            srvCfgIface->set_property(srvCfgPropTimeOut, timeOut);
+        }
+
+        if(EnabledPropStatus && (!unitMaskedState))
+        {
+            if (unitEnabledState != EnabledStatus)
+            {
+                unitEnabledState = unitRunningState = EnabledStatus;
+                srvCfgIface->set_property(srvCfgPropEnabled, unitEnabledState);
+                srvCfgIface->set_property(srvCfgPropRunning, unitRunningState);
+                updatedFlag |= (1<< static_cast<uint8_t>(UpdatedProp::enabledState));
+                updatedFlag |= (1<< static_cast<uint8_t>(UpdatedProp::runningState));
+                startServiceRestartTimer();
+            }
+            if (unitEnabledState != unitRunningState)
+            {
+                unitRunningState = EnabledStatus;
+               srvCfgIface->set_property(srvCfgPropRunning, unitRunningState);
+               updatedFlag |= (1<< static_cast<uint8_t>(UpdatedProp::runningState));
+               startServiceRestartTimer();
+            }
+        }
+        internalSet = false;
+
+    }
+
     if (!socketObjectPath.empty())
     {
         sockAttrIface->initialize();
