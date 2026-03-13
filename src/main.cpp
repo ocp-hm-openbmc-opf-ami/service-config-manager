@@ -48,7 +48,8 @@ static std::unordered_map<std::string /* unitName */,
                        {"obmc-console-ssh", true},   {"ssifbridge", false},
                        {"xyz.openbmc_project.Pmt", false},
                        {"xyz.openbmc_project.VirtualMedia", false},
-                       {"ipmb", false}};
+                       {"ipmb", false}, {"start-ipkvm1", false},
+                       {"xyz.openbmc_project.VirtualMedia1", false}};
 
 enum class UnitType
 {
@@ -213,7 +214,7 @@ static inline void handleListUnitsResponse(
 
     // Loop through all units, and mark all units, which has to be
     // managed, irrespective of instance name.
-    for (const auto& unit : listUnitsPtr)
+    for (const auto& unit : *listUnitsPtr)
     {
         // Ignore non-existent units
         if (std::get<static_cast<int>(ListUnitElements::loadState)>(unit) ==
@@ -442,7 +443,7 @@ static inline void handleListUnitsResponse(
                     if (!ec)
                     {
                         lg2::info("Retry timer expired, re-checking units...");
-                        handleListUnitsResponse(server, conn, ec, listUnitsPtr);
+                        handleListUnitsResponse(server, conn, ec, *listUnitsPtr);
                     }
                     else if (ec != boost::asio::error::operation_aborted)
                     {
