@@ -208,9 +208,12 @@ static inline void handleListUnitsResponse(
     boost::system::error_code /*ec*/,
     const std::vector<ListUnitsType>& listUnits)
 {
+    // Wrap listUnits in shared_ptr to avoid copies in lambdas
+    auto listUnitsPtr = std::make_shared<std::vector<ListUnitsType>>(listUnits);
+
     // Loop through all units, and mark all units, which has to be
     // managed, irrespective of instance name.
-    for (const auto& unit : listUnits)
+    for (const auto& unit : listUnitsPtr)
     {
         // Ignore non-existent units
         if (std::get<static_cast<int>(ListUnitElements::loadState)>(unit) ==
@@ -410,7 +413,7 @@ static inline void handleListUnitsResponse(
     };
 
     // Function to check if all units are ready and create objects
-    auto tryCreateObjects = [&server, &conn, unitStatusMap, isUnitReady, listUnits]() {
+    auto tryCreateObjects = [&server, &conn, unitStatusMap, isUnitReady, listUnitsPtr]() {
         try
         {
             // Check if all units are ready
@@ -434,12 +437,12 @@ static inline void handleListUnitsResponse(
             {
                 lg2::info("Not all units ready yet, will retry...");
                 timer->expires_after(std::chrono::seconds(5));
-                timer->async_wait([&server, &conn, listUnits](
+                timer->async_wait([&server, &conn, listUnitsPtr](
                                     const boost::system::error_code& ec) {
                     if (!ec)
                     {
                         lg2::info("Retry timer expired, re-checking units...");
-                        handleListUnitsResponse(server, conn, ec, listUnits);
+                        handleListUnitsResponse(server, conn, ec, listUnitsPtr);
                     }
                     else if (ec != boost::asio::error::operation_aborted)
                     {
@@ -494,7 +497,7 @@ static inline void handleListUnitsResponse(
     };
 
     // Callback function for status checks
-    auto statusCallback = [unitStatusMap, pendingChecks, tryCreateObjects](
+    auto statusCallbackImpl = [unitStatusMap, pendingChecks, tryCreateObjects](
         const std::string& unit, bool isService, bool ready) {
         try
         {
@@ -528,6 +531,9 @@ static inline void handleListUnitsResponse(
         }
     };
 
+    // Wrap in shared_ptr to avoid copying the entire capture list in each async call
+    auto statusCallback = std::make_shared<decltype(statusCallbackImpl)>(std::move(statusCallbackImpl));
+
     // Check status for all units
     for (const auto& [unit, status] : *unitStatusMap)
     {
@@ -535,7 +541,7 @@ static inline void handleListUnitsResponse(
         {
             checkUnitStatus(status->servicePath, conn,
                 [unit, statusCallback](bool ready) {
-                    statusCallback(unit, true, ready);
+                    (*statusCallback)(unit, true, ready);
                 });
         }
         else
@@ -549,7 +555,7 @@ static inline void handleListUnitsResponse(
         {
             checkUnitStatus(status->socketPath, conn,
                 [unit, statusCallback](bool ready) {
-                    statusCallback(unit, false, ready);
+                    (*statusCallback)(unit, false, ready);
                 });
         }
         else
