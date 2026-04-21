@@ -75,6 +75,7 @@ class ServiceConfig
     void stopAndApplyUnitConfig(boost::asio::yield_context yield);
     void restartUnitConfig(boost::asio::yield_context yield);
     void startServiceRestartTimer();
+    void reloadServiceConfig();
 
 #ifdef USB_CODE_UPDATE
     void saveUSBCodeUpdateStateToFile(const bool& maskedState,
@@ -113,13 +114,15 @@ class ServiceConfig
     bool unitRunningState = false;
 
     bool isSocketActivatedService = false;
+    bool hasExtendedProps = false;
+    bool hasTimeoutProp = false;
     std::string subStateValue;
 
     std::string stateFile;
 
     bool isMaskedOut();
     void registerProperties();
-    void queryAndUpdateProperties(bool isStartup);
+    void queryAndUpdateProperties(bool isRestore);
     void createSocketOverrideConf();
     void updateServiceProperties(
         const boost::container::flat_map<std::string, VariantType>&

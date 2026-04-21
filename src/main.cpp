@@ -21,6 +21,7 @@
 #include <cereal/types/unordered_map.hpp>
 #include <sdbusplus/bus/match.hpp>
 
+#include <csignal>
 #include <filesystem>
 #include <fstream>
 #include <unordered_map>
@@ -33,6 +34,9 @@ std::unique_ptr<boost::asio::steady_timer> initTimer = nullptr;
 std::map<std::string, std::shared_ptr<phosphor::service::ServiceConfig>>
     srvMgrObjects;
 static bool unitQueryStarted = false;
+#ifdef PERSIST_SETTINGS
+bool useJsonDefaults = false;
+#endif
 
 static constexpr const char* srvCfgMgrFileOld = "/etc/srvcfg-mgr.json";
 static constexpr const char* srvCfgMgrFile = "srvcfg-mgr.json";
@@ -662,7 +666,43 @@ int main()
         return 1;
     }
 
+#ifdef PERSIST_SETTINGS
+    // Only load JSON defaults if no persistent state files exist (fresh image)
+    if (!std::filesystem::exists(srvDataBaseDir) ||
+        std::filesystem::is_empty(srvDataBaseDir))
+    {
+        useJsonDefaults = true;
+        updateGlobalDataFromFile();
+    }
+    else
+    {
+        // Check if any per-service state files exist (not just srvcfg-mgr.json)
+        bool hasPersistentState = false;
+        for (const auto& entry :
+             std::filesystem::directory_iterator(srvDataBaseDir))
+        {
+            if (entry.is_regular_file() &&
+                entry.path().filename() != srvCfgMgrFile)
+            {
+                hasPersistentState = true;
+                break;
+            }
+        }
+        if (hasPersistentState)
+        {
+            lg2::info(
+                "Persistent state files found, skipping JSON defaults");
+            useJsonDefaults = false;
+        }
+        else
+        {
+            useJsonDefaults = true;
+            updateGlobalDataFromFile();
+        }
+    }
+#else
     updateGlobalDataFromFile();
+#endif
     boost::asio::io_context io;
     auto conn = std::make_shared<sdbusplus::asio::connection>(io);
     timer = std::make_unique<boost::asio::steady_timer>(io);
@@ -671,6 +711,75 @@ int main()
     auto server = sdbusplus::asio::object_server(conn, true);
     server.add_manager(phosphor::service::srcCfgMgrBasePath);
 
+    // SIGHUP signal handler to reload service configuration from persistent
+    // storage. In redundant BMC systems, this enables automatic configuration
+    // updates when data is synchronized from a peer BMC.
+    boost::asio::signal_set signals(io, SIGHUP);
+    std::function<void(const boost::system::error_code&, int)> sighupHandler;
+    sighupHandler = [&signals, &sighupHandler](
+                        const boost::system::error_code& ec, int signalNumber) {
+        // Re-arm the handler so we never miss a subsequent SIGHUP.
+        // Additional signals received during handler execution are
+        // queued by the event loop and processed sequentially
+        signals.async_wait(sighupHandler);
+
+        if (ec)
+        {
+            lg2::error("Failed to receive SIGHUP signal, Error: {EC}", "EC",
+                       ec.value());
+            return;
+        }
+        lg2::info("Received SIGHUP signal {SIGNAL}", "SIGNAL", signalNumber);
+
+#ifdef PERSIST_SETTINGS
+        lg2::info("Reloading service configuration from persisted storage");
+
+        for (auto& [objPath, srvObj] : srvMgrObjects)
+        {
+            if (!srvObj)
+            {
+                // Invalid or unable to access the object
+                continue;
+            }
+            try
+            {
+                srvObj->reloadServiceConfig();
+                lg2::debug(
+                    "Successfully reloaded service configuration for {OBJPATH}",
+                    "OBJPATH", objPath);
+            }
+            catch (const std::exception& e)
+            {
+                lg2::error(
+                    "Failed to reload configuration for {OBJPATH}: {ERROR}",
+                    "OBJPATH", objPath, "ERROR", e);
+            }
+        }
+
+        lg2::info("service configuration reloaded successfully.");
+#else
+        lg2::info(
+            "Ignoring reload for SIGHUP signal, persistent settings disabled.");
+#endif
+    };
+    signals.async_wait(sighupHandler);
+
+    // Initialize the objects after systemd indicated startup finished.
+    auto userUpdatedSignal = std::make_unique<sdbusplus::bus::match_t>(
+        static_cast<sdbusplus::bus_t&>(*conn),
+        "type='signal',"
+        "member='StartupFinished',path='/org/freedesktop/systemd1',"
+        "interface='org.freedesktop.systemd1.Manager'",
+        [&server, &conn](sdbusplus::message_t& /*msg*/) {
+            if (!unitQueryStarted)
+            {
+                unitQueryStarted = true;
+                init(server, conn);
+            }
+        });
+    // this will make sure to initialize the objects, when daemon is
+    // restarted.
+    
     // Start initialization directly
     checkAndInit(server, conn);
 
