@@ -1,0 +1,12 @@
+option(
+    'usb-code-update',
+    type: 'feature',
+    description: 'Enable USB code update enable/disable feature.',
+)
+
+option(
+    'persist-settings-to-file',
+    type: 'feature',
+    description: 'Write user settings to persistent filesystem.',
+    value: 'enabled',
+)
