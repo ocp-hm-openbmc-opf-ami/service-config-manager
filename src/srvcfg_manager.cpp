@@ -516,14 +516,7 @@ void ServiceConfig::loadStateFile()
             unitEnabledState = stateMap[srvCfgPropEnabled];
             updatedFlag |=
                 (1 << static_cast<uint8_t>(UpdatedProp::enabledState));
-            startServiceRestartTimer();
-        }
-        if (stateMap[srvCfgPropRunning] != unitRunningState)
-        {
-            lg2::info(
-                "Running property for {FILEPATH} not equal. Setting to {SETTING}",
-                "FILEPATH", stateFile, "SETTING", stateMap[srvCfgPropRunning]);
-            unitRunningState = stateMap[srvCfgPropRunning];
+            unitRunningState = stateMap[srvCfgPropEnabled];
             updatedFlag |=
                 (1 << static_cast<uint8_t>(UpdatedProp::runningState));
             startServiceRestartTimer();
