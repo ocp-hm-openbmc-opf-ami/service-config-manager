@@ -54,7 +54,10 @@ void createDropinDirectory() {
             std::cerr << "Failed to create drop-in directory: " << DROPBEAR_DROPIN_DIR << std::endl;
             exit(EXIT_FAILURE);
         } else {
-            std::cout << "Drop-in directory created: " << DROPBEAR_DROPIN_DIR << std::endl;
+            if (debug)
+            {
+                std::cout << "Drop-in directory created: " << DROPBEAR_DROPIN_DIR << std::endl;
+            }
         }
     }
 }
@@ -82,6 +85,9 @@ void createOrUpdateDropinFile(int maxSessions) {
         {
             std::cerr << "Failed to reload" << e.what() << std::endl;
         }
-        std::cout << "Drop-in file updated with MaxConnections=" << maxSessions << " in " << DROPBEAR_DROPIN_FILE << std::endl;
+        if (debug)
+        {
+            std::cout << "Drop-in file updated with MaxConnections=" << maxSessions << " in " << DROPBEAR_DROPIN_FILE << std::endl;
+        }
     }
 }

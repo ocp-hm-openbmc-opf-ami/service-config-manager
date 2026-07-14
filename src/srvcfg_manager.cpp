@@ -17,6 +17,7 @@
 
 #include <boost/asio/detached.hpp>
 #include <boost/asio/spawn.hpp>
+
 #ifdef USB_CODE_UPDATE
 #include <cereal/archives/json.hpp>
 #include <cereal/types/tuple.hpp>
@@ -72,7 +73,10 @@ void updateFileFromGlobalData() {
 
     try {
         file << std::setw(4) << global_data << std::endl;
-        std::cout << "JSON data successfully written to file: " << filename << std::endl;
+        if (debug)
+        {
+            std::cout << "JSON data successfully written to file: " << filename << std::endl;
+        }
     } catch (json::exception& e) {
         std::cerr << "Error while writing JSON data to file: " << e.what() << std::endl;
     }

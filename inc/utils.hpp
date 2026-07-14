@@ -25,6 +25,8 @@
 #include <filesystem>
 #include <string>
 
+static constexpr bool debug = false;
+
 static constexpr const char* sysdStartUnit = "StartUnit";
 static constexpr const char* sysdStopUnit = "StopUnit";
 static constexpr const char* sysdRestartUnit = "RestartUnit";

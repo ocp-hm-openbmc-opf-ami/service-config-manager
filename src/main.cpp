@@ -647,8 +647,11 @@ bool checkBmcWebServicesActive() {
         }
 
         if (i < maxRetries - 1) {
-            std::cout << "Check " << (i + 1) << ": Not all services active, retrying in "
-                      << sleepSeconds << " seconds..." << std::endl;
+            if (debug)
+            {
+                std::cout << "Check " << (i + 1) << ": Not all services active, retrying in "
+                          << sleepSeconds << " seconds..." << std::endl;
+            }
             std::this_thread::sleep_for(std::chrono::seconds(sleepSeconds));
         }
     }
