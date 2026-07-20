@@ -26,9 +26,10 @@
 #include <cstdio>
 #endif
 
-#include <iostream>
 #include <nlohmann/json.hpp>
+
 #include <fstream>
+#include <iostream>
 #ifdef PERSIST_SETTINGS
 #include <nlohmann/json.hpp>
 #endif
@@ -45,51 +46,68 @@ static bool updateInProgress = false;
 const std::string filename = "/etc/srvcfg-manager/srvcfg.json";
 using srvcfgMap = std::map<std::string, std::pair<uint16_t, uint16_t>>;
 using json = nlohmann::json;
-//using namespace std;
+// using namespace std;
 json global_data;
 
-void updateGlobalDataFromFile() {
+void updateGlobalDataFromFile()
+{
     std::ifstream file(filename);
-    if (!file.is_open()) {
+    if (!file.is_open())
+    {
         std::cerr << "Failed to open file: " << filename << std::endl;
         return;
     }
 
-    try {
+    try
+    {
         file >> global_data;
-    } catch (json::parse_error& e) {
-        std::cerr << "Parse error while reading JSON file: " << e.what() << std::endl;
+    }
+    catch (json::parse_error& e)
+    {
+        std::cerr << "Parse error while reading JSON file: " << e.what()
+                  << std::endl;
     }
 
     file.close();
 }
 
-void updateFileFromGlobalData() {
+void updateFileFromGlobalData()
+{
     std::ofstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "Failed to open file for writing: " << filename << std::endl;
+    if (!file.is_open())
+    {
+        std::cerr << "Failed to open file for writing: " << filename
+                  << std::endl;
         return;
     }
 
-    try {
+    try
+    {
         file << std::setw(4) << global_data << std::endl;
         if (debug)
         {
-            std::cout << "JSON data successfully written to file: " << filename << std::endl;
+            std::cout << "JSON data successfully written to file: " << filename
+                      << std::endl;
         }
-    } catch (json::exception& e) {
-        std::cerr << "Error while writing JSON data to file: " << e.what() << std::endl;
+    }
+    catch (json::exception& e)
+    {
+        std::cerr << "Error while writing JSON data to file: " << e.what()
+                  << std::endl;
     }
 
     file.close();
 }
 
-bool checkServicetoAddTimeOutandMaxSessProp(const std::string& service_name) {
+bool checkServicetoAddTimeOutandMaxSessProp(const std::string& service_name)
+{
 #ifdef PERSIST_SETTINGS
     if (useJsonDefaults)
     {
-        for (const auto& service : global_data["services"]) {
-            if (service["name"] == service_name) {
+        for (const auto& service : global_data["services"])
+        {
+            if (service["name"] == service_name)
+            {
                 return true;
             }
         }
@@ -114,8 +132,10 @@ bool checkServicetoAddTimeOutandMaxSessProp(const std::string& service_name) {
     }
     return false;
 #else
-    for (const auto& service : global_data["services"]) {
-        if (service["name"] == service_name) {
+    for (const auto& service : global_data["services"])
+    {
+        if (service["name"] == service_name)
+        {
             return true;
         }
     }
@@ -515,8 +535,7 @@ void ServiceConfig::loadStateFile()
         {
             lg2::info(
                 "Enabled property for {FILEPATH} not equal. Setting to {SETTING}",
-                "FILEPATH", stateFile, "SETTING",
-                stateMap[srvCfgPropEnabled]);
+                "FILEPATH", stateFile, "SETTING", stateMap[srvCfgPropEnabled]);
             unitEnabledState = stateMap[srvCfgPropEnabled];
             updatedFlag |=
                 (1 << static_cast<uint8_t>(UpdatedProp::enabledState));
@@ -583,13 +602,13 @@ void ServiceConfig::stopAndApplyUnitConfig(boost::asio::yield_context yield)
         return;
     }
     lg2::info("Applying new settings: {OBJPATH}", "OBJPATH", objPath);
-    // Enabled-only changes should not stop the service 
+    // Enabled-only changes should not stop the service
     bool needsStop =
         (updatedFlag & ((1 << static_cast<uint8_t>(UpdatedProp::maskedState)) |
                         (1 << static_cast<uint8_t>(UpdatedProp::runningState)) |
                         (1 << static_cast<uint8_t>(UpdatedProp::port)))) != 0;
-    if (needsStop &&
-        (subStateValue == subStateRunning || subStateValue == subStateListening))
+    if (needsStop && (subStateValue == subStateRunning ||
+                      subStateValue == subStateListening))
     {
         if (!socketObjectPath.empty())
         {
@@ -695,8 +714,7 @@ void ServiceConfig::restartUnitConfig(boost::asio::yield_context yield)
 
     // Skip restart for Enabled-only changes
     bool onlyEnabledChanged =
-        (updatedFlag ==
-         (1 << static_cast<uint8_t>(UpdatedProp::enabledState)));
+        (updatedFlag == (1 << static_cast<uint8_t>(UpdatedProp::enabledState)));
     if (unitRunningState && !onlyEnabledChanged)
     {
         if (!socketObjectPath.empty())
@@ -775,7 +793,7 @@ void ServiceConfig::registerProperties()
     bool EnabledPropStatus = false;
     bool EnabledStatus = false;
 
-    if(checkServicetoAddTimeOutandMaxSessProp(instantiatedUnitName))
+    if (checkServicetoAddTimeOutandMaxSessProp(instantiatedUnitName))
     {
         hasExtendedProps = true;
 
@@ -784,45 +802,52 @@ void ServiceConfig::registerProperties()
         {
             for (auto& service : global_data["services"])
             {
-                if (service["name"] == instantiatedUnitName) {
-                    TimoutPropStatus =  service.contains("timeout");
+                if (service["name"] == instantiatedUnitName)
+                {
+                    TimoutPropStatus = service.contains("timeout");
                     hasTimeoutProp = TimoutPropStatus;
                     EnabledPropStatus = service.contains("Enabled");
 
-                    if(instantiatedUnitName == "bmcweb")
+                    if (instantiatedUnitName == "bmcweb")
                     {
-                        MaxSessPropStatus = service.contains("web_max_session_limit") && service.contains("redfish_max_session_limit") ;
+                        MaxSessPropStatus =
+                            service.contains("web_max_session_limit") &&
+                            service.contains("redfish_max_session_limit");
                     }
                     else
                     {
-                        MaxSessPropStatus = service.contains("max_session_limit") ;
+                        MaxSessPropStatus =
+                            service.contains("max_session_limit");
                     }
 
-
-                    if (MaxSessPropStatus) {
-                        if(instantiatedUnitName == "bmcweb")
+                    if (MaxSessPropStatus)
+                    {
+                        if (instantiatedUnitName == "bmcweb")
                         {
                             webMaxSess = service["web_max_session_limit"];
-                            redfishMaxSess =  service["redfish_max_session_limit"];
+                            redfishMaxSess =
+                                service["redfish_max_session_limit"];
                         }
                         else
                         {
                             maxSess = service["max_session_limit"];
                         }
                     }
-                    if (TimoutPropStatus){
+                    if (TimoutPropStatus)
+                    {
                         uint64_t timeout_tmp = service["timeout"];
-                        if(timeout_tmp < 30 || timeout_tmp > 86400)
+                        if (timeout_tmp < 30 || timeout_tmp > 86400)
                         {
                             timeOut = 600;
                         }
-                        else{
+                        else
+                        {
                             timeOut = timeout_tmp;
                         }
-
                     }
-                    if (EnabledPropStatus){
-                        EnabledStatus  = service["Enabled"];
+                    if (EnabledPropStatus)
+                    {
+                        EnabledStatus = service["Enabled"];
                     }
 
                     break;
@@ -888,44 +913,49 @@ void ServiceConfig::registerProperties()
 #else
         for (auto& service : global_data["services"])
         {
-            if (service["name"] == instantiatedUnitName) {
-                TimoutPropStatus =  service.contains("timeout");
+            if (service["name"] == instantiatedUnitName)
+            {
+                TimoutPropStatus = service.contains("timeout");
                 EnabledPropStatus = service.contains("Enabled");
 
-                if(instantiatedUnitName == "bmcweb")
+                if (instantiatedUnitName == "bmcweb")
                 {
-                    MaxSessPropStatus = service.contains("web_max_session_limit") && service.contains("redfish_max_session_limit") ;
+                    MaxSessPropStatus =
+                        service.contains("web_max_session_limit") &&
+                        service.contains("redfish_max_session_limit");
                 }
                 else
                 {
-                    MaxSessPropStatus = service.contains("max_session_limit") ;
+                    MaxSessPropStatus = service.contains("max_session_limit");
                 }
 
-
-                if (MaxSessPropStatus) {
-                    if(instantiatedUnitName == "bmcweb")
+                if (MaxSessPropStatus)
+                {
+                    if (instantiatedUnitName == "bmcweb")
                     {
                         webMaxSess = service["web_max_session_limit"];
-                        redfishMaxSess =  service["redfish_max_session_limit"];
+                        redfishMaxSess = service["redfish_max_session_limit"];
                     }
                     else
                     {
                         maxSess = service["max_session_limit"];
                     }
                 }
-                if (TimoutPropStatus){
+                if (TimoutPropStatus)
+                {
                     uint64_t timeout_tmp = service["timeout"];
-                    if(timeout_tmp < 30 || timeout_tmp > 86400)
+                    if (timeout_tmp < 30 || timeout_tmp > 86400)
                     {
                         timeOut = 600;
                     }
-                    else{
+                    else
+                    {
                         timeOut = timeout_tmp;
                     }
-
                 }
-                if (EnabledPropStatus){
-                    EnabledStatus  = service["Enabled"];
+                if (EnabledPropStatus)
+                {
+                    EnabledStatus = service["Enabled"];
                 }
 
                 break;
@@ -959,15 +989,16 @@ void ServiceConfig::registerProperties()
                 return 1;
             });
     }
-    if(TimoutPropStatus)
+    if (TimoutPropStatus)
     {
         srvCfgIface->register_property(
             srvCfgPropTimeOut, timeOut,
             [this](const uint64_t& req, uint64_t& res) {
                 if (!internalSet)
                 {
-                    if(req < 30 || req > 86400){
-                        std::cout << "inavlid data :"<< req << std::endl;
+                    if (req < 30 || req > 86400)
+                    {
+                        std::cout << "inavlid data :" << req << std::endl;
                         return 0;
                     }
 
@@ -984,16 +1015,19 @@ void ServiceConfig::registerProperties()
 #else
                     for (auto& service : global_data["services"])
                     {
-                        if (service["name"] == instantiatedUnitName) {
-                            service["timeout"] = timeOut =  req;
+                        if (service["name"] == instantiatedUnitName)
+                        {
+                            service["timeout"] = timeOut = req;
                             break;
                         }
                     }
 #endif
-                    if( instantiatedUnitName == "dropbear")
+                    if (instantiatedUnitName == "dropbear")
                     {
-                        if(!updateDropbearTimeout(timeOut)) {
-                            std::cout << "Fail to update the Timeout value" << std::endl;
+                        if (!updateDropbearTimeout(timeOut))
+                        {
+                            std::cout << "Fail to update the Timeout value"
+                                      << std::endl;
                             return 0;
                         }
                     }
@@ -1007,33 +1041,30 @@ void ServiceConfig::registerProperties()
             });
     }
 
-
-    if(MaxSessPropStatus)
+    if (MaxSessPropStatus)
     {
-        if(instantiatedUnitName == "bmcweb")
+        if (instantiatedUnitName == "bmcweb")
         {
             srvCfgIface->register_property(
-                    "WebMaxSession", webMaxSess,
-                    sdbusplus::asio::PropertyPermission::readOnly);
+                "WebMaxSession", webMaxSess,
+                sdbusplus::asio::PropertyPermission::readOnly);
 
             srvCfgIface->register_property(
-                    "RedfishMaxSession", redfishMaxSess,
-                    sdbusplus::asio::PropertyPermission::readOnly);
+                "RedfishMaxSession", redfishMaxSess,
+                sdbusplus::asio::PropertyPermission::readOnly);
         }
         else
         {
-            if(instantiatedUnitName == "dropbear")
+            if (instantiatedUnitName == "dropbear")
             {
                 createOrUpdateDropinFile(maxSess);
             }
 
             srvCfgIface->register_property(
-                    srvCfgPropMaxSess, maxSess,
-                    sdbusplus::asio::PropertyPermission::readOnly);
+                srvCfgPropMaxSess, maxSess,
+                sdbusplus::asio::PropertyPermission::readOnly);
         }
-
     }
-
 
     srvCfgIface->register_property(
         srvCfgPropMasked, unitMaskedState, [this](const bool& req, bool& res) {
@@ -1079,11 +1110,13 @@ void ServiceConfig::registerProperties()
                 srvCfgIface->set_property(srvCfgPropRunning, unitRunningState);
                 internalSet = false;
 #ifndef PERSIST_SETTINGS
-                if(checkServicetoAddTimeOutandMaxSessProp(instantiatedUnitName))
+                if (checkServicetoAddTimeOutandMaxSessProp(
+                        instantiatedUnitName))
                 {
                     for (auto& service : global_data["services"])
                     {
-                        if (service["name"] == instantiatedUnitName) {
+                        if (service["name"] == instantiatedUnitName)
+                        {
                             service["Enabled"] = unitEnabledState;
                             break;
                         }
@@ -1141,18 +1174,21 @@ void ServiceConfig::registerProperties()
 #ifdef PERSIST_SETTINGS
                 unitEnabledState = req;
 #else
-                if(checkServicetoAddTimeOutandMaxSessProp(instantiatedUnitName))
+                if (checkServicetoAddTimeOutandMaxSessProp(
+                        instantiatedUnitName))
                 {
                     for (auto& service : global_data["services"])
                     {
-                        if (service["name"] == instantiatedUnitName) {
+                        if (service["name"] == instantiatedUnitName)
+                        {
                             service["Enabled"] = unitEnabledState = req;
                             break;
                         }
                     }
                     updateFileFromGlobalData();
                 }
-                else{
+                else
+                {
                     unitEnabledState = req;
                 }
 #endif
@@ -1216,16 +1252,17 @@ void ServiceConfig::registerProperties()
         });
 
     srvCfgIface->initialize();
-    if(checkServicetoAddTimeOutandMaxSessProp(instantiatedUnitName))
+    if (checkServicetoAddTimeOutandMaxSessProp(instantiatedUnitName))
     {
-
         internalSet = true;
-        if(TimoutPropStatus)
+        if (TimoutPropStatus)
         {
-            if( instantiatedUnitName == "dropbear")
+            if (instantiatedUnitName == "dropbear")
             {
-                if(!updateDropbearTimeout(timeOut)) {
-                    std::cout << "Fail to update the Timeout for " << instantiatedUnitName << std::endl;
+                if (!updateDropbearTimeout(timeOut))
+                {
+                    std::cout << "Fail to update the Timeout for "
+                              << instantiatedUnitName << std::endl;
                 }
             }
             srvCfgIface->set_property(srvCfgPropTimeOut, timeOut);
@@ -1234,9 +1271,9 @@ void ServiceConfig::registerProperties()
         // Only apply Enabled override from defaults on fresh image.
         // On subsequent boots, loadStateFile() handles persistent state.
 #ifdef PERSIST_SETTINGS
-        if(useJsonDefaults && EnabledPropStatus && (!unitMaskedState))
+        if (useJsonDefaults && EnabledPropStatus && (!unitMaskedState))
 #else
-        if(EnabledPropStatus && (!unitMaskedState))
+        if (EnabledPropStatus && (!unitMaskedState))
 #endif
         {
             if (unitEnabledState != EnabledStatus)
@@ -1244,20 +1281,22 @@ void ServiceConfig::registerProperties()
                 unitEnabledState = unitRunningState = EnabledStatus;
                 srvCfgIface->set_property(srvCfgPropEnabled, unitEnabledState);
                 srvCfgIface->set_property(srvCfgPropRunning, unitRunningState);
-                updatedFlag |= (1<< static_cast<uint8_t>(UpdatedProp::enabledState));
-                updatedFlag |= (1<< static_cast<uint8_t>(UpdatedProp::runningState));
+                updatedFlag |=
+                    (1 << static_cast<uint8_t>(UpdatedProp::enabledState));
+                updatedFlag |=
+                    (1 << static_cast<uint8_t>(UpdatedProp::runningState));
                 startServiceRestartTimer();
             }
             if (unitEnabledState != unitRunningState)
             {
                 unitRunningState = EnabledStatus;
-               srvCfgIface->set_property(srvCfgPropRunning, unitRunningState);
-               updatedFlag |= (1<< static_cast<uint8_t>(UpdatedProp::runningState));
-               startServiceRestartTimer();
+                srvCfgIface->set_property(srvCfgPropRunning, unitRunningState);
+                updatedFlag |=
+                    (1 << static_cast<uint8_t>(UpdatedProp::runningState));
+                startServiceRestartTimer();
             }
         }
         internalSet = false;
-
     }
 
 #ifdef PERSIST_SETTINGS
@@ -1268,7 +1307,8 @@ void ServiceConfig::registerProperties()
     else
     {
         loadStateFile();
-        // Fix for bmcweb socket dead but running state is true issue after reboot.
+        // Fix for bmcweb socket dead but running state is true issue after
+        // reboot.
         if (unitRunningState && !unitEnabledState &&
             !socketObjectPath.empty() && !serviceObjectPath.empty() &&
             !(updatedFlag &

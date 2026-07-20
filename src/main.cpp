@@ -21,13 +21,13 @@
 #include <cereal/types/unordered_map.hpp>
 #include <sdbusplus/bus/match.hpp>
 
+#include <atomic>
 #include <csignal>
 #include <filesystem>
 #include <fstream>
-#include <unordered_map>
-#include <memory>
 #include <functional>
-#include <atomic>
+#include <memory>
+#include <unordered_map>
 
 std::unique_ptr<boost::asio::steady_timer> timer = nullptr;
 std::unique_ptr<boost::asio::steady_timer> initTimer = nullptr;
@@ -46,14 +46,20 @@ static constexpr const char* tmpFileBad = "/tmp/srvcfg-mgr.json.bad";
 // units(service/socket) will be managed by this daemon.
 static std::unordered_map<std::string /* unitName */,
                           bool /* isSocketActivated */>
-    managedServices = {{"phosphor-ipmi-net", false}, {"bmcweb", false},
-                       {"phosphor-ipmi-kcs", false}, {"start-ipkvm", false},
-                       {"obmc-console", false},      {"dropbear", true},
-                       {"obmc-console-ssh", true},   {"ssifbridge", false},
-                       {"xyz.openbmc_project.Pmt", false},
-                       {"xyz.openbmc_project.VirtualMedia", false},
-                       {"ipmb", false}, {"start-ipkvm1", false},
-                       {"xyz.openbmc_project.VirtualMedia1", false}};
+    managedServices = {
+        {"phosphor-ipmi-net", false},
+        {"bmcweb", false},
+        {"phosphor-ipmi-kcs", false},
+        {"start-ipkvm", false},
+        {"obmc-console", false},
+        {"dropbear", true},
+        {"obmc-console-ssh", true},
+        {"ssifbridge", false},
+        {"xyz.openbmc_project.Pmt", false},
+        {"xyz.openbmc_project.VirtualMedia", false},
+        {"ipmb", false},
+        {"start-ipkvm1", false},
+        {"xyz.openbmc_project.VirtualMedia1", false}};
 
 enum class UnitType
 {
@@ -123,11 +129,10 @@ std::tuple<std::string, UnitType, std::string> getUnitNameTypeAndInstance(
     return std::make_tuple(unitName, type, instanceName);
 }
 
-void checkUnitStatus(
-    const std::string& unitPath,
-    std::shared_ptr<sdbusplus::asio::connection>& conn,
+void checkUnitStatus(const std::string& unitPath,
+                     std::shared_ptr<sdbusplus::asio::connection>& conn,
 
-    std::function<void(bool)> callback)
+                     std::function<void(bool)> callback)
 {
     if (unitPath.empty())
     {
@@ -138,71 +143,66 @@ void checkUnitStatus(
     try
     {
         auto methodCallback =
-            [callback, unitPath](
-                boost::system::error_code ec,
-                const std::map<std::string, std::variant<std::string>>& properties) {
+            [callback,
+             unitPath](boost::system::error_code ec,
+                       const std::map<std::string, std::variant<std::string>>&
+                           properties) {
+                try
+                {
+                    if (ec)
+                    {
+                        lg2::error(
+                            "Failed to get properties for unit {UNIT}: {ERROR}",
+                            "UNIT", unitPath, "ERROR", ec.message());
+                        callback(false);
+                        return;
+                    }
 
-            try
-            {
-                if (ec)
+                    std::string activeState = "inactive";
+                    std::string subState = "dead";
+
+                    auto activeIt = properties.find("ActiveState");
+                    if (activeIt != properties.end())
+                    {
+                        activeState = std::get<std::string>(activeIt->second);
+                    }
+
+                    auto subIt = properties.find("SubState");
+                    if (subIt != properties.end())
+                    {
+                        subState = std::get<std::string>(subIt->second);
+                    }
+
+                    // Consider service ready based on state
+                    bool isReady =
+                        (activeState == "active" || activeState == "inactive" ||
+                         activeState == "failed");
+
+                    // For socket units, also consider "listening" state as
+                    // ready
+                    if (subState == "listening")
+                    {
+                        isReady = true;
+                    }
+                    callback(isReady);
+                }
+                catch (const std::exception& e)
                 {
                     lg2::error(
-                        "Failed to get properties for unit {UNIT}: {ERROR}",
-                        "UNIT", unitPath,
-                        "ERROR", ec.message());
+                        "Exception in status callback for {UNIT}: {ERROR}",
+                        "UNIT", unitPath, "ERROR", e.what());
                     callback(false);
-                    return;
                 }
+            };
 
-                std::string activeState = "inactive";
-                std::string subState = "dead";
-
-                auto activeIt = properties.find("ActiveState");
-                if (activeIt != properties.end())
-                {
-                    activeState = std::get<std::string>(activeIt->second);
-                }
-
-                auto subIt = properties.find("SubState");
-                if (subIt != properties.end())
-                {
-                    subState = std::get<std::string>(subIt->second);
-                }
-
-                // Consider service ready based on state
-                bool isReady = (activeState == "active" ||
-                              activeState == "inactive" ||
-                              activeState == "failed");
-
-                // For socket units, also consider "listening" state as ready
-                if (subState == "listening")
-                {
-                    isReady = true;
-                }
-                callback(isReady);
-            }
-            catch (const std::exception& e)
-            {
-                lg2::error("Exception in status callback for {UNIT}: {ERROR}",
-                          "UNIT", unitPath,
-                          "ERROR", e.what());
-                callback(false);
-            }
-        };
-
-        conn->async_method_call(
-            methodCallback,
-            "org.freedesktop.systemd1",
-            unitPath,
-            "org.freedesktop.DBus.Properties",
-            "GetAll",
-            "org.freedesktop.systemd1.Unit");
+        conn->async_method_call(methodCallback, "org.freedesktop.systemd1",
+                                unitPath, "org.freedesktop.DBus.Properties",
+                                "GetAll", "org.freedesktop.systemd1.Unit");
     }
     catch (const std::exception& e)
     {
-        lg2::error("Failed to send status request for {UNIT}: {ERROR}",
-                   "UNIT", unitPath,
-                   "ERROR", e.what());
+        lg2::error("Failed to send status request for {UNIT}: {ERROR}", "UNIT",
+                   unitPath, "ERROR", e.what());
         callback(false);
     }
 }
@@ -369,7 +369,8 @@ static inline void handleListUnitsResponse(
 #endif
 
     // Use map with shared ownership
-    auto unitStatusMap = std::make_shared<std::map<std::string, std::shared_ptr<UnitStatus>>>();
+    auto unitStatusMap =
+        std::make_shared<std::map<std::string, std::shared_ptr<UnitStatus>>>();
     auto pendingChecks = std::make_shared<std::atomic<int>>(0);
 
     // Initialize status map and count pending checks
@@ -403,22 +404,24 @@ static inline void handleListUnitsResponse(
     }
     catch (const std::exception& e)
     {
-        lg2::error("Failed to initialize status map: {ERROR}",
-                   "ERROR", e.what());
+        lg2::error("Failed to initialize status map: {ERROR}", "ERROR",
+                   e.what());
         return;
     }
 
     // Function to check if unit is ready
     auto isUnitReady = [](const std::shared_ptr<UnitStatus>& status) {
-        bool serviceOk = status->servicePath.empty() ||
-                        (status->serviceChecked.load() && status->serviceReady);
+        bool serviceOk =
+            status->servicePath.empty() ||
+            (status->serviceChecked.load() && status->serviceReady);
         bool socketOk = status->socketPath.empty() ||
-                       (status->socketChecked.load() && status->socketReady);
+                        (status->socketChecked.load() && status->socketReady);
         return serviceOk && socketOk;
     };
 
     // Function to check if all units are ready and create objects
-    auto tryCreateObjects = [&server, &conn, unitStatusMap, isUnitReady, listUnitsPtr]() {
+    auto tryCreateObjects = [&server, &conn, unitStatusMap, isUnitReady,
+                             listUnitsPtr]() {
         try
         {
             // Check if all units are ready
@@ -428,12 +431,12 @@ static inline void handleListUnitsResponse(
                 if (!isUnitReady(status))
                 {
                     allReady = false;
-                    lg2::info("Unit {UNIT} not ready yet - service checked: {SVCCHK}, ready: {SVCRDY}, socket checked: {SOCKCHK}, ready: {SOCKRDY}",
-                             "UNIT", unit,
-                             "SVCCHK", status->serviceChecked.load(),
-                             "SVCRDY", status->serviceReady,
-                             "SOCKCHK", status->socketChecked.load(),
-                             "SOCKRDY", status->socketReady);
+                    lg2::info(
+                        "Unit {UNIT} not ready yet - service checked: {SVCCHK}, ready: {SVCRDY}, socket checked: {SOCKCHK}, ready: {SOCKRDY}",
+                        "UNIT", unit, "SVCCHK", status->serviceChecked.load(),
+                        "SVCRDY", status->serviceReady, "SOCKCHK",
+                        status->socketChecked.load(), "SOCKRDY",
+                        status->socketReady);
                     break;
                 }
             }
@@ -443,15 +446,17 @@ static inline void handleListUnitsResponse(
                 lg2::info("Not all units ready yet, will retry...");
                 timer->expires_after(std::chrono::seconds(5));
                 timer->async_wait([&server, &conn, listUnitsPtr](
-                                    const boost::system::error_code& ec) {
+                                      const boost::system::error_code& ec) {
                     if (!ec)
                     {
                         lg2::info("Retry timer expired, re-checking units...");
-                        handleListUnitsResponse(server, conn, ec, *listUnitsPtr);
+                        handleListUnitsResponse(server, conn, ec,
+                                                *listUnitsPtr);
                     }
                     else if (ec != boost::asio::error::operation_aborted)
                     {
-                        lg2::error("Timer error: {ERROR}", "ERROR", ec.message());
+                        lg2::error("Timer error: {ERROR}", "ERROR",
+                                   ec.message());
                     }
                 });
                 return;
@@ -479,31 +484,31 @@ static inline void handleListUnitsResponse(
                                 monitorElement::serviceObjPath)>(it.second),
                             std::get<static_cast<int>(
                                 monitorElement::socketObjPath)>(it.second));
-                    srvMgrObjects.emplace(
-                        std::make_pair(std::move(objPath),
-                                     std::move(srvCfgObj)));
+                    srvMgrObjects.emplace(std::make_pair(std::move(objPath),
+                                                         std::move(srvCfgObj)));
                 }
                 catch (const std::exception& e)
                 {
                     lg2::error(
                         "Failed to create object for unit {UNIT}: {ERROR}",
-                        "UNIT", it.first,
-                        "ERROR", e.what());
+                        "UNIT", it.first, "ERROR", e.what());
                 }
             }
 
-            lg2::info("Created {COUNT} service objects", "COUNT", srvMgrObjects.size());
+            lg2::info("Created {COUNT} service objects", "COUNT",
+                      srvMgrObjects.size());
         }
         catch (const std::exception& e)
         {
-            lg2::error("Exception in tryCreateObjects: {ERROR}",
-                       "ERROR", e.what());
+            lg2::error("Exception in tryCreateObjects: {ERROR}", "ERROR",
+                       e.what());
         }
     };
 
     // Callback function for status checks
-    auto statusCallbackImpl = [unitStatusMap, pendingChecks, tryCreateObjects](
-        const std::string& unit, bool isService, bool ready) {
+    auto statusCallbackImpl = [unitStatusMap, pendingChecks,
+                               tryCreateObjects](const std::string& unit,
+                                                 bool isService, bool ready) {
         try
         {
             auto it = unitStatusMap->find(unit);
@@ -526,18 +531,22 @@ static inline void handleListUnitsResponse(
 
             if (remaining == 0)
             {
-                lg2::info("All status checks complete, attempting to create objects");
+                lg2::info(
+                    "All status checks complete, attempting to create objects");
                 tryCreateObjects();
             }
         }
         catch (const std::exception& e)
         {
-            lg2::error("Exception in status callback: {ERROR}", "ERROR", e.what());
+            lg2::error("Exception in status callback: {ERROR}", "ERROR",
+                       e.what());
         }
     };
 
-    // Wrap in shared_ptr to avoid copying the entire capture list in each async call
-    auto statusCallback = std::make_shared<decltype(statusCallbackImpl)>(std::move(statusCallbackImpl));
+    // Wrap in shared_ptr to avoid copying the entire capture list in each async
+    // call
+    auto statusCallback = std::make_shared<decltype(statusCallbackImpl)>(
+        std::move(statusCallbackImpl));
 
     // Check status for all units
     for (const auto& [unit, status] : *unitStatusMap)
@@ -545,9 +554,9 @@ static inline void handleListUnitsResponse(
         if (!status->servicePath.empty())
         {
             checkUnitStatus(status->servicePath, conn,
-                [unit, statusCallback](bool ready) {
-                    (*statusCallback)(unit, true, ready);
-                });
+                            [unit, statusCallback](bool ready) {
+                                (*statusCallback)(unit, true, ready);
+                            });
         }
         else
         {
@@ -559,9 +568,9 @@ static inline void handleListUnitsResponse(
         if (!status->socketPath.empty())
         {
             checkUnitStatus(status->socketPath, conn,
-                [unit, statusCallback](bool ready) {
-                    (*statusCallback)(unit, false, ready);
-                });
+                            [unit, statusCallback](bool ready) {
+                                (*statusCallback)(unit, false, ready);
+                            });
         }
         else
         {
@@ -608,63 +617,69 @@ void checkAndInit(sdbusplus::asio::object_server& server,
     }
 }
 
-bool isServiceActive(const std::string& serviceName) {
+bool isServiceActive(const std::string& serviceName)
+{
     std::string cmd = "systemctl is-active --quiet " + serviceName;
     int result = std::system(cmd.c_str());
     // systemctl returns 0 if the service is active
     return result == 0;
 }
 
-bool isServiceEnabled(const std::string& serviceName) {
-    return std::system(("systemctl is-enabled --quiet " + serviceName).c_str()) == 0;
+bool isServiceEnabled(const std::string& serviceName)
+{
+    return std::system(
+               ("systemctl is-enabled --quiet " + serviceName).c_str()) == 0;
 }
 
-bool checkBmcWebServicesActive() {
-
-    std::vector<std::string> services = {
-        "bmcweb.service",
-        "bmcweb.socket"
-    };
+bool checkBmcWebServicesActive()
+{
+    std::vector<std::string> services = {"bmcweb.service", "bmcweb.socket"};
 
     const int maxRetries = 6;
     const int sleepSeconds = 30;
 
-    if (!isServiceEnabled("bmcweb.socket")) {
-            return true;
+    if (!isServiceEnabled("bmcweb.socket"))
+    {
+        return true;
     }
 
-    for (int i = 0; i < maxRetries; ++i) {
+    for (int i = 0; i < maxRetries; ++i)
+    {
         bool allActive = true;
-        for (const auto& service : services) {
-            if (!isServiceActive(service)) {
+        for (const auto& service : services)
+        {
+            if (!isServiceActive(service))
+            {
                 allActive = false;
                 break;
             }
         }
 
-        if (allActive) {
+        if (allActive)
+        {
             return true;
         }
 
-        if (i < maxRetries - 1) {
+        if (i < maxRetries - 1)
+        {
             if (debug)
             {
-                std::cout << "Check " << (i + 1) << ": Not all services active, retrying in "
+                std::cout << "Check " << (i + 1)
+                          << ": Not all services active, retrying in "
                           << sleepSeconds << " seconds..." << std::endl;
             }
             std::this_thread::sleep_for(std::chrono::seconds(sleepSeconds));
         }
     }
 
-    std::cout << "bmcweb services are not active after " << maxRetries << " retries. so, exiting service-config-manager" << std::endl;
+    std::cout << "bmcweb services are not active after " << maxRetries
+              << " retries. so, exiting service-config-manager" << std::endl;
     return false;
 }
 
-
 int main()
 {
-
-    if(!checkBmcWebServicesActive())
+    if (!checkBmcWebServicesActive())
     {
         return 1;
     }
@@ -693,8 +708,7 @@ int main()
         }
         if (hasPersistentState)
         {
-            lg2::info(
-                "Persistent state files found, skipping JSON defaults");
+            lg2::info("Persistent state files found, skipping JSON defaults");
             useJsonDefaults = false;
         }
         else
@@ -782,7 +796,7 @@ int main()
         });
     // this will make sure to initialize the objects, when daemon is
     // restarted.
-    
+
     // Start initialization directly
     checkAndInit(server, conn);
 
