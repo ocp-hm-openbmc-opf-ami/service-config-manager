@@ -19,6 +19,7 @@
 #include <cereal/archives/json.hpp>
 #include <cereal/types/tuple.hpp>
 #include <cereal/types/unordered_map.hpp>
+#include <nlohmann/json.hpp>
 #include <sdbusplus/bus/match.hpp>
 
 #include <atomic>
@@ -708,8 +709,40 @@ int main()
         }
         if (hasPersistentState)
         {
-            lg2::info("Persistent state files found, skipping JSON defaults");
-            useJsonDefaults = false;
+            std::string bmcwebState = std::string(srvDataBaseDir) + "bmcweb";
+            bool hasExtProps = false;
+            if (std::filesystem::exists(bmcwebState))
+            {
+                try
+                {
+                    std::ifstream pfile(bmcwebState);
+                    if (pfile.good())
+                    {
+                        auto stateMap =
+                            nlohmann::json::parse(pfile, nullptr, false, true);
+                        hasExtProps = !stateMap.is_discarded() &&
+                                      (stateMap.contains("SessionTimeOut") ||
+                                       stateMap.contains("WebMaxSession"));
+                    }
+                }
+                catch (const std::exception& e)
+                {
+                    lg2::error("Failed to parse bmcweb state file: {ERROR}",
+                               "ERROR", e.what());
+                }
+            }
+            if (hasExtProps)
+            {
+                /* Persistent state files found, skipping JSON defaults */
+                useJsonDefaults = false;
+            }
+            else
+            {
+                lg2::info("Legacy bmcweb persistent state file detected. "
+                          "Loading session properties from JSON.");
+                useJsonDefaults = true;
+                updateGlobalDataFromFile();
+            }
         }
         else
         {
