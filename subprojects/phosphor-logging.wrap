@@ -1,5 +1,5 @@
 [wrap-git]
-url = https://git.ami.com/core/ami-bmc/one-tree/core/phosphor-logging.git
+url = https://github.com/ocp-hm-openbmc-opf-ami/phosphor-logging.git
 revision = HEAD
 
 [provide]
