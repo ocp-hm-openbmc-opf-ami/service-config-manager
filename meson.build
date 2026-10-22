@@ -12,6 +12,20 @@ project(
 # Basically, gcc 6 and gcc 7 are not ABI compatible, but since the whole OpenBMC
 # project uses the same compiler, we can safely ignmore these info notes.
 add_project_arguments('-Wno-psabi', language: 'cpp')
+tests_opt = get_option('tests')
+if tests_opt.enabled()
+  add_project_arguments('-DTEST_ENABLED', language: 'cpp')
+  add_project_arguments('-Wno-template-body', language: 'cpp')
+  add_project_arguments('-Wno-overloaded-virtual', language: 'cpp')
+  sdbusplus_dep = subproject('sdbusplus').get_variable('sdbusplus_dep')
+  meson.override_dependency('sdbusplus', sdbusplus_dep)
+  phosphor_dbus_interfaces_dep = subproject('phosphor-dbus-interfaces-ami').get_variable('phosphor_dbus_interfaces_dep')
+  phosphor_logging_dep = subproject('phosphor-logging').get_variable('phosphor_logging_dep')
+else
+   sdbusplus_dep = dependency('sdbusplus')
+   phosphor_dbus_interfaces_dep = dependency('phosphor-dbus-interfaces')
+   phosphor_logging_dep = dependency('phosphor-logging')
+endif
 
 boost_args = [
     '-DBOOST_ALL_NO_LIB',
@@ -25,9 +39,9 @@ boost_args = [
 
 deps = [
     dependency('boost', modules: ['coroutine', 'context']),
-    dependency('phosphor-dbus-interfaces'),
-    dependency('phosphor-logging'),
-    dependency('sdbusplus'),
+    sdbusplus_dep,
+    phosphor_dbus_interfaces_dep ,
+    phosphor_logging_dep,
     dependency('libsystemd'),
 ]
 
@@ -59,6 +73,11 @@ systemd_system_unit_dir = systemd.get_variable(
     'systemd_system_unit_dir',
     pkgconfig_define: ['prefix', get_option('prefix')],
 )
+
+tests_opt = get_option('tests')
+if tests_opt.enabled()
+    subdir('tests')
+endif
 
 fs = import('fs')
 fs.copyfile(

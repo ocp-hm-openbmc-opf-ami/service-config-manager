@@ -1,4 +1,10 @@
 option(
+    'tests',
+    type : 'feature',
+    description : 'Unit tests'
+)
+
+option(
     'usb-code-update',
     type: 'feature',
     description: 'Enable USB code update enable/disable feature.',
